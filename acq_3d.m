@@ -1,4 +1,4 @@
-function acq_3d(root_path)
+function acq_3d(seq_path)
 % Code used to acquire the 3-d kinematics of larval fish in 3d from 2
 % camera views.  This code is designed with impulse chamber experiments in
 % mind, but could be adapted to a variety of experimental situations.
@@ -7,99 +7,207 @@ function acq_3d(root_path)
 % cameras are directed with perpendicular orientations.
 % 
 % Each sequence directory should contain the following directories:
-%   cal    - should have 2 video frames, each with an image of a
-%            ruler/micrometer from the two camera views ('cam1_ruler.tif' 
-%            & 'cam2_ruler.tif') and 2 video frames, each including a sharp
-%            point that can be viewed from both cams
-%            ('cam1_pnt.tif','cam2_pnt.tif')
-%   cam1   - video recording from the cam1 view as individual tiffs
-%   cam2    - video recording from the cam2 view, as individual tiffs
+%   'top view'   - video recording from the cam1 view as individual tiffs
+%   'side view'  - video recording from the cam2 view, as individual tiffs
 %
+% Each sequence directory should contain the following calibration images:
+%   'scale T.tif' 
+%   'scale S.tif'
 
 
-%% General parameters
+%set(0,'DefaultFigurePointer','arrow')
+
+%% Parameters
 
 % Suffix for video frame filenames (e.g. 'tif' or 'TIFF')
 im_suf = 'tif';
 
-% Top cam  prefix
-pre_camT = 'cam_top_frame_';
+% Top cam directory name
+seq.dir_camT = 'top view';
 
 % Side cam prefix
-pre_camS = 'cam_side_frame_';
+seq.dir_camS = 'side view';
 
 % Top cam calibration filename
-camT_cal_name = 'cam_top_ruler_001.tif';
+seq.fname_camT_cal = 'scale top.tif';
 
 % Side cam calibration filename
-camS_cal_name = 'cam_side_ruler_001.tif';
+seq.fname_camS_cal = 'scale side.tif';
 
-% Top cam view of image of same point
-camT_pnt_name = 'cam_top_pnt_001.tif';
-
-% Side cam view of image of same point
-camS_pnt_name = 'cam_side_pnt_001.tif';
+% Max number of frames for creating the mean image
+maxFrames = 1000;
 
 
-%% Establish directory for the group of sequences
+%% Specifying sequence information 
 
 % Prompt for directory
 if nargin < 1
-   root_path = uigetdir(pwd,'Choose directory for a particular fish');
+    seq_path = uigetdir(pwd,'Choose directory for a particular sequence');
 end
 
-% Initialize variables
-a = dir(root_path);
-j = 1;
-calT_path = []; calS_path = []; pntT_path = []; pntS_path = []; seqs = [];
-
-% Step through each item in directory
-for i = 3:length(a)
+if isempty(dir([seq_path filesep 'seq_info.mat']))
     
-    % Sequence directory
-    if a(i).isdir && a(i).name(1)=='0'
-        seqs(j).name = a(i).name;
-        j = j + 1;
+    % Check for sequence directories
+    if isempty(dir([seq_path filesep seq.dir_camT]))
+        error(['The sequence directory must have a directory called "'...
+            seq.dir_camT '"']);
         
-    % Top calibration    
-    elseif strcmp(a(i).name,camT_cal_name)
-        calT_path = [root_path filesep a(i).name];
-        
-    % Side calibration    
-    elseif strcmp(a(i).name,camS_cal_name)
-        calS_path = [root_path filesep a(i).name];
-    
-    % Top point    
-    elseif strcmp(a(i).name,camT_pnt_name)
-        pntT_path = [root_path filesep a(i).name];
-        
-    % Side point    
-    elseif strcmp(a(i).name,camS_pnt_name)
-        pntS_path = [root_path filesep a(i).name];
-    
+    elseif isempty(dir([seq_path filesep seq.dir_camS]))
+        error(['The sequence directory must have a directory called "'...
+            seq.dir_camS '"']);
     end
+    
+    % Look for images in video directories
+    seq.aT = dir([seq_path filesep seq.dir_camT filesep '*.' im_suf]);
+    seq.aS = dir([seq_path filesep seq.dir_camS filesep '*.' im_suf]);
+    
+    % Verify images
+    if isempty(seq.aT)
+        error(['No images identified in ' seq_path filesep seq.dir_camT])
+    elseif isempty(seq.aS)
+        error(['No images identified in ' seq_path filesep seq.dir_camS])
+    end
+    
+    % Check frame number
+    if length(seq.aT) > length(seq.aS)
+        warning(['more frames from top view than side view: ' ...
+            'trimming duration to shorter sequence'])
+        
+    elseif length(seq.aT) > length(seq.aS)
+        warning(['more frames from side view than top view: '...
+            'trimming duration to shorter sequence'])
+    end
+    
+    % Specify number of frames
+    seq.num_frames = min([length(seq.aS) length(seq.aT)]);
+    
+    % Check for calibration files
+    if isempty(dir([seq_path filesep seq.fname_camT_cal]))
+        [seq.fname_camT_cal,path,fIdx] = uigetfile([seq_path filesep '*.*'],...
+            'Choose top view calibration file');
+    end
+    
+    if isempty(dir([seq_path filesep seq.fname_camS_cal]))
+        [seq.fname_camS_cal,path,fIdx] = uigetfile([seq_path filesep '*.*'],...
+            'Choose side view calibration file');
+    end
+    
+    % Prompt for sequence information
+    answer = inputdlg({'Fish number','Sequence number','Frame rate (fps)'},...
+        'Sequence information',1,{'1','1','1000'});
+    
+    % Store sequence info
+    seq.fish_num   = str2num(answer{1});
+    seq.seq_num    = str2num(answer{2});
+    seq.frame_rate = str2num(answer{3});
+    
+    % Clean up
+    clear answer im_suf
+    
+    save([seq_path filesep 'seq_info.mat'],'seq')
+    
+else
+    disp(' ')
+    disp(' Loading sequence info')
+    load([seq_path filesep 'seq_info.mat'])
 end
 
-% Check for all calibration files
-if isempty(calT_path)
-    error('No top calibration file present')
-elseif isempty(calS_path)
-    error('No side calibration file present')
-elseif isempty(pntT_path)
-    error('No top point file present')
-elseif isempty(pntS_path)
-    error('No side point file present')
+clear im_suf 
+
+
+%% Create mean images
+
+% Calculate mean image does not exist
+if isempty(dir([seq_path filesep 'meanImage_T.tif'])) || ...
+   isempty(dir([seq_path filesep 'meanImage_S.tif']))  
+
+    pathT = [seq_path filesep seq.dir_camT];
+    pathS = [seq_path filesep seq.dir_camS];
+    
+    % Define list of frame numbers, depending on max number of frames
+    % requested
+    if seq.num_frames > maxFrames
+        dframe = floor(seq.num_frames/maxFrames);
+        frIdx = 1:dframe:seq.num_frames;
+        clear dframe
+    else
+        frIdx = 1:seq.num_frames;
+    end
+    
+    % Create waitbar
+    h = waitbar(0,...
+            ['Mean image: ' num2str(1)],...
+             'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
+    
+    % Create sum image based on first frame
+    [imCurr,tmp] = imread([pathT filesep seq.aT(frIdx(1)).name]);
+    imSumT = double(imCurr);
+    
+    [imCurr,tmp] = imread([pathS filesep seq.aS(frIdx(1)).name]);
+    imSumS = double(imCurr);
+    
+    clear imCurr tmp
+    
+    
+    % Loop through frames 
+    for i = 1:length(frIdx)
+        
+        % Add current frame to sum image
+        [imCurr,tmp] = imread([pathT filesep seq.aT(frIdx(i)).name]);
+        imSumT       = imSumT + double(imCurr);
+        
+        [imCurr,tmp] = imread([pathS filesep seq.aS(frIdx(i)).name]);
+        imSumS       = imSumS + double(imCurr);
+        
+        clear tmp imCurr
+        
+        % Update status bar
+        h = waitbar(i/length(frIdx),h,...
+            ['Mean image: ' num2str(i) ' of ' num2str(length(frIdx)) ' frames']);
+        
+        % Quit m-file, if cancel button pushed
+        if getappdata(h,'canceling')
+            close force
+            return
+        end
+        
+    end
+    
+    % Calculate mean from sum images
+    imMeanT = uint8(round(imSumT./(length(frIdx)+1)));
+    imMeanT = imMeanT(:,:,1);
+    
+    imMeanS = uint8(round(imSumS./(length(frIdx)+1)));
+    imMeanS = imMeanS(:,:,1);
+    
+    % Write image to movie dir
+    imwrite(imMeanT,[seq_path filesep 'meanImage_T.tif'],'tif',...
+            'Compression','none');
+    imwrite(imMeanS,[seq_path filesep 'meanImage_S.tif'],'tif',...
+            'Compression','none');
+    
+    close force
+    clear frIdx h i imSumT imSumS
+        
+    %imMean = rgb2gray(imMean);
+      
+    
+% Load mean image, if present
+else
+    
+    disp(' ')
+    disp('Loading mean images . . .');
+    imMeanT = imread([seq_path filesep 'meanImage_T.tif']);
+    imMeanS = imread([seq_path filesep 'meanImage_S.tif']);
+    
 end
 
-% Check for sequences
-if isempty(seqs)
-    error('No sequence directories present')
-end
+clear maxFrames
 
 
-%% Acquire calibration data
+%% Acquire/load calibration data
 
-if isempty(dir([root_path filesep 'cal_data.mat']))
+if isempty(dir([seq_path filesep 'cal_data.mat']))
     
     f = figure;
     
@@ -110,12 +218,15 @@ if isempty(dir([root_path filesep 'cal_data.mat']))
     disp(' Top cam: y-axis points down on screen')
     disp('          x-axis points left on screen')
     disp( ' ')
-    disp('Side cam: x-axis points left on screen')
-    disp('          z-axis points up on screen')
+    disp(' Side cam: x-axis points left on screen')
+    disp('           z-axis points up on screen')
     disp( ' ')
     
-    % Calibrate magnificantion in top cam -------------------------------
-    im_cal_camT = imread2([root_path filesep camT_cal_name]); 
+    % Calibrate magnification in top cam -------------------------------
+    im_cal_camT = imread([seq_path filesep seq.fname_camT_cal]); 
+    
+    % Adjust contrast
+    im_cal_camT = imadjust(im_cal_camT);
     
     cal.camT.const = calibrate(im_cal_camT,...
             'Top cam: choose 2 points over known disance, press return');
@@ -123,27 +234,25 @@ if isempty(dir([root_path filesep 'cal_data.mat']))
     clear im_cal_camT
       
      % Calibrate magnificantion in cam2 -------------------------------  
-    im_cal_camS = imread2([root_path filesep camS_cal_name]); 
+    im_cal_camS = imread([seq_path filesep seq.fname_camS_cal]); 
+    
+    % Adjust contrast
+    im_cal_camS = imadjust(im_cal_camS);
     
     cal.camS.const = calibrate(im_cal_camS,...
               'Side cam: choose 2 points over known disance, press return');
     
-    clear im_cal_camS
+     clear im_cal_camS
        
     % Select same point in the two views ------------------------------
-    % Load images
-    im_pnt_camT = imread2([root_path filesep camT_pnt_name]); 
-    im_pnt_camS = imread2([root_path filesep camS_pnt_name]); 
     
     % Point selection
-    [xT,yT] = point_select(im_pnt_camT, 'Top cam: Click on point');
+    [xT,yT,xS,yS] = select_common(seq_path,seq,imMeanT,imMeanS);
     cal.camT.pnt = [xT yT];
-    
-    [xT,yT] = point_select(im_pnt_camS, 'Side cam: Click on point');
-    cal.camS.pnt = [xT,yT];
+    cal.camS.pnt = [xS yS];
     
     % Save 'cal'
-    save([root_path filesep 'cal_data.mat'],'cal')
+    save([seq_path filesep 'cal_data.mat'],'cal')
     
     clear im_cam1 im_cam2
     close
@@ -154,65 +263,42 @@ else
     disp(' ')
     
     % Load 'cal' structure
-    load([root_path filesep 'cal_data.mat'])
+    load([seq_path filesep 'cal_data.mat'])
 end
 
 
-%% Establish directory structure for current sequence
-
-% Prompt for sequence
-if ~isempty(seqs)
-   seq_path = uigetdir(root_path,'Choose sequence to analyze');
-   disp(' '); disp('Choose a sequence to analyze');
-else
-    error('No sequence directories present')
-end
-
-% Get video file info
-a_camT = dir([seq_path filesep pre_camT '*.' im_suf]);
-a_camS = dir([seq_path filesep pre_camS '*.' im_suf]);
-
-% Check for images
-if isempty(a_camT)
-    error('No top image files present')
-elseif isempty(a_camS)
-    error('No side image files present')
-elseif length(a_camT) ~= length(a_camS)
-    error('There is an unequal number of side and top frames');
-end
-
-
-%% Prep data structure, set zoom
+%% Prep data structure, set zoom 
 
 if isempty(dir([seq_path filesep 'coord_data.mat']))
     
-    % Prompt for start and end frames
-    prompt = {'Start frame','End frame','Frame rate'};
-    defaults = {'1',num2str(length(a_camT)),'500'};
-    
-    answer = inputdlg(prompt,' ',1,defaults);
-    
-    d.start_frame = str2num(answer{1});
-    d.end_frame   = str2num(answer{2}); 
-    d.frame_rate  = str2num(answer{3});
+    % Define start and end frames  
+    d.start_frame = 1;
+    d.end_frame   = seq.num_frames; 
+    d.frame_rate  = seq.frame_rate;
     
     clear answer prompt defaults
     
-    % Define number of frames
+    % Define frames
     d.frame_skip = 1; 
     d.frames     = d.start_frame:d.frame_skip:d.end_frame;
     d.num_frames = length(d.frames);
     
     % Create empty fields in 'd'
-    d.top.xLim  = nan(d.num_frames,2);
-    d.top.yLim  = nan(d.num_frames,2);
-    d.side.xLim = nan(d.num_frames,2);
-    d.side.yLim = nan(d.num_frames,2);
+    d.T.x_roi  = nan(d.num_frames,5);
+    d.T.y_roi  = nan(d.num_frames,5);
+    d.S.x_roi  = nan(d.num_frames,5);
+    d.S.y_roi  = nan(d.num_frames,5);
     
-    d.top.leftEye   = nan(d.num_frames,2);
-    d.top.rightEye  = nan(d.num_frames,2);
-    d.side.leftEye  = nan(d.num_frames,2);
-    d.side.rightEye = nan(d.num_frames,2);
+    d.T.mod_roi = zeros(d.num_frames,1);
+    d.S.mod_roi = zeros(d.num_frames,1);
+    
+    d.T.leftEye   = nan(d.num_frames,2);
+    d.T.rightEye  = nan(d.num_frames,2);
+    d.T.SB        = nan(d.num_frames,2);
+    
+    d.S.leftEye   = nan(d.num_frames,2);
+    d.S.rightEye  = nan(d.num_frames,2);
+    d.S.SB        = nan(d.num_frames,2); 
     
     d.x_coord       = nan(d.num_frames,1);
     d.y_coord       = nan(d.num_frames,1);
@@ -226,36 +312,59 @@ if isempty(dir([seq_path filesep 'coord_data.mat']))
     set(f,'Menubar','figure')
     
     % Read first frame
-    imT = imread2([seq_path filesep a_camT(d.start_frame).name]);
-    imS = imread2([seq_path filesep a_camS(d.start_frame).name]);
+    imT = imread([seq_path filesep seq.dir_camT filesep seq.aT(d.start_frame).name]);
+    imS = imread([seq_path filesep seq.dir_camS filesep seq.aS(d.start_frame).name]);
     
-    % Prompt for zoom
-    warning off
+     % Prompt for zoom
+     warning off
+%     hT(1) = imshow(imT);
+%     title('Top view: select zoom level, press return')
+%     add_labels(cal.camT)
+%     zoom on
+%     pause
+
     hT(1) = imshow(imT);
     title('Top view: select zoom level, press return')
     add_labels(cal.camT)
-    zoom on
-    pause
+    [x_tmp,y_tmp,h_im] = select_roi;
     
-    % Store top axes in 'd'
-    d.top.xLim(1,:) = xlim;
-    d.top.yLim(1,:) = ylim;
+    d.T.x_roi = repmat(x_tmp,size(d.T.x_roi,1),1);
+    d.T.y_roi = repmat(y_tmp,size(d.T.y_roi,1),1);
+    
+    % Determine default threshold value
+    x_tmp = floor(min(d.T.x_roi(1,:))):ceil(max(d.T.x_roi(1,:)));
+    y_tmp = floor(min(d.T.y_roi(1,:))):ceil(max(d.T.y_roi(1,:)));
+    im_tmp = imT(y_tmp,x_tmp);
+            
+    d.T.tVal = ones(size(d.T.y_roi,1),1).*graythresh(im_tmp)/2;
+    d.T.mod_tVal = zeros(size(d.T.y_roi,1),1);
+    
+    clear h_im x_tmp y_tmp im_tmp
     
     % Prompt for zoom
     hS(1) = imshow(imS);
     title('Side view: select zoom level, press return')
     add_labels(cal.camS)
-    zoom on
-    pause
+    [x_tmp,y_tmp,h_im] = select_roi;
     
-    % Store side axes in 'd'
-    d.side.xLim(1,:) = xlim;
-    d.side.yLim(1,:) = ylim;
+    d.S.x_roi = repmat(x_tmp,size(d.S.x_roi,1),1);
+    d.S.y_roi = repmat(y_tmp,size(d.S.y_roi,1),1);
     
+    % Determine default threshold value
+    x_tmp = floor(min(d.S.x_roi(1,:))):ceil(max(d.S.x_roi(1,:)));
+    y_tmp = floor(min(d.S.y_roi(1,:))):ceil(max(d.S.y_roi(1,:)));
+    im_tmp = imS(y_tmp,x_tmp);
+
+    d.S.tVal = ones(size(d.S.y_roi,1),1).*graythresh(im_tmp)/2;
+    d.S.mod_tVal = zeros(size(d.S.y_roi,1),1);
     
-    warning on
-    clear hS hT   
+    clear x_roi y_roi h_im hS hT h_im x_tmp y_tmp
+   
+    warning on  
     close
+    
+    % Set current frame index
+    d.curr_frame_idx = 1;
     
     save([seq_path filesep 'coord_data.mat'],'d')
 
@@ -272,325 +381,64 @@ end
 
 %% Acquire coordinates
 
-% Commands
-disp('Commands ')
-disp('   Left click   - collect coordinate')
-disp('   Right click    - delete coordinate')
-disp('   Return        - finish point collecting')
-disp('   ESC           - stop acq_3d')
-disp(' ')
 
-% Define index number
-idx = find(~isnan(d.top.leftEye(:,1)),1,'last');
-if isempty(idx)
-    idx = 1;
-else
-    idx = idx + d.frame_skip;
-end
+select_eyes(seq_path,d,seq,cal,imMeanT,imMeanS)
 
-% Define frame limits
-xlim_range_s = range(d.side.xLim(idx,:));
-ylim_range_s = range(d.side.yLim(idx,:));
-xlim_range_t = range(d.top.xLim(idx,:));
-ylim_range_t = range(d.top.yLim(idx,:));
 
-% Loop through frames from the two perspectives -------------------------
-while true
-    
-    % Read image files for current time 
-    cFrame = d.frames(idx);
-    imT = imread2([seq_path filesep a_camT(idx).name]);
-    imS = imread2([seq_path filesep a_camS(idx).name]);
-     
-    % Define ralative frames
-    next_idx = min([idx+d.frame_skip d.num_frames]);
-    last_idx = max([idx-d.frame_skip 1]);
-    
-    % Define handles
-    hS = [];
-    hT = [];
-    
-    skip_side = 0;
-    
-    %% ACQUIRE HEAD CENTER, TOP VIEW 
-    
-    % Acquire, only if no top point
-    %if isnan(d.top.leftEye(idx,1))
-        
-        % Display side view
-        warning off
-        subplot(1,2,2)
-        hS(1) = imshow(imS);
-        
-        % Zoom by setting xlim, ylim
-        xlim(d.side.xLim(idx,:));
-        ylim(d.side.yLim(idx,:));
-        
-        % Title and labels
-        htxt(2) = title(['Side (frame ' num2str(idx) ...
-               ' of ' num2str(d.num_frames) ')']);
-        add_labels(cal.camS)
-        
-        % Display top view
-        subplot(1,2,1)
-        hT(1) = imshow(imT);
-        xlim(d.top.xLim(idx,:));
-        ylim(d.top.yLim(idx,:));
-        
-        % Draw boarder
-        hold on
-        bd(1) = plot([d.top.xLim(idx,1) d.top.xLim(idx,2) ...
-                      d.top.xLim(idx,2) d.top.xLim(idx,1) ...
-                      d.top.xLim(idx,1)],[d.top.yLim(idx,1) ...
-                      d.top.yLim(idx,1) d.top.yLim(idx,2) ...
-                      d.top.yLim(idx,2) d.top.yLim(idx,1)],'r-');
-        set(bd(1),'LineWidth',3);
-        hold off
-               
-%         hold on
-%         xVals = [d.top.xLim(idx,1) d.top.xLim(idx,2) ...
-%                  d.top.xLim(idx,2) d.top.xLim(idx,1) ...
-%                  d.top.xLim(idx,1)];
-%         yVals = [d.top.yLim(idx,1) d.top.yLim(idx,1) ...
-%                  d.top.yLim(idx,2) d.top.yLim(idx,2) ...
-%                  d.top.yLim(idx,1)];  
-%              
-%         plot(xVals,yVals,'w-')   
-%         hold off
-        
-      
-        %title(['Top (frame ' num2str(idx) ')'])
-        htxt(1) = title(['Top: click on the left eye (frame ' num2str(idx) ...
-               ' of ' num2str(d.num_frames) ')']);
-        set(htxt(1),'Color','r')
-        add_labels(cal.camT)
-        
-        warning on
-        
-        % Prompt to input a point
-        [x_tmp,y_tmp,b_tmp] = ginput(1);
-        
-        % Left click
-        if b_tmp ==1
-            d.top.leftEye(idx,:) = [x_tmp y_tmp];
-            
-            % Adjust image limits for next frame
-            y_cntr = y_tmp;
-            y_min  = max([1 y_cntr-ylim_range_t/2]);
-            y_max  = min([size(imT,1) y_cntr+ylim_range_t/2]);
-            x_min  = max([1 x_tmp-xlim_range_t/2]);
-            x_max  = min([size(imT,2) x_tmp+xlim_range_t/2]);
-            
-            d.top.xLim(next_idx,:) = [x_min x_max];
-            d.top.yLim(next_idx,:) = [y_min y_max];
-                         
-            clear y_ctnr y_min y_max x_min x_max
-            
-        % Right click
-        elseif b_tmp ==3
-            d.top.leftEye(idx,:) = nan(1,2);
-            d.side.leftEye(idx,:) = nan(1,2);
-            
-            skip_side = 1;
-            
-            % Jump back current frame number
-            idx = last_idx;
-            
-        % 'Return'
-        elseif isempty(b_tmp)
-            close
-            % Clear coord values
-            clear x_tmp y_tmp b_tmp
-            break
-            
-        % esc
-        elseif b_tmp == 27
-            return
-        end
-        
-        % Clear coord values
-        clear x_tmp y_tmp b_tmp
-        delete(bd(1))
-        set(htxt(1),'Color','k')
-    
-    
-    %% ACQUIRE HEAD CENTER, SIDE VIEW 
-     if ~skip_side   
-        % Overlay selected point
-        subplot(1,2,1)
-        hold on
+function im = give_im(imPath,invert,imMean,x_roi,y_roi)
 
-        hT(2) = plot(d.top.leftEye(idx,1),d.top.leftEye(idx,2),'r+');
-        htxt(1) = title(['Top (frame ' num2str(idx) ...
-                  ' of ' num2str(d.num_frames) ')']);
-        set(htxt(1),'Color','k')
-        hold off
-        
-        % Plot line on side view
-        subplot(1,2,2)
-        
-        % Draw boarder
-        hold on
-        bd(2) = plot([d.side.xLim(idx,1) d.side.xLim(idx,2) ...
-                      d.side.xLim(idx,2) d.side.xLim(idx,1) ...
-                      d.side.xLim(idx,1)],[d.side.yLim(idx,1) ...
-                      d.side.yLim(idx,1) d.side.yLim(idx,2) ...
-                      d.side.yLim(idx,2) d.side.yLim(idx,1)],'r-');
-        set(bd(2),'LineWidth',3);
-        hold off
-        
-        
-%         hold on
-%         
-%         xVals = [d.side.xLim(idx,1) d.side.xLim(idx,2) ...
-%                  d.side.xLim(idx,2) d.side.xLim(idx,1) ...
-%                  d.side.xLim(idx,1)];
-%         yVals = [d.side.yLim(idx,1) d.side.yLim(idx,1) ...
-%                  d.side.yLim(idx,2) d.side.yLim(idx,2) ...
-%                  d.side.yLim(idx,1)];  
-%              
-%         plot(xVals,yVals,'w-')   
-%         
-%         %hS(2) = plot([x_side_tmp x_side_tmp],ylim,'r--');
-%         hold off
-        htxt(2) = title(['Side: click on the left eye (frame ' num2str(idx) ...
-               ' of ' num2str(d.num_frames) ')']);
-        set(htxt(2),'Color','r') 
-        pause(.01)
-        
-        % Prompt for z-coordinate of point
-        [x_tmp,y_tmp,b_tmp] = ginput(1);
-        
-        % If left click
-        if b_tmp ==1
-            d.side.leftEye(idx,:) = [x_tmp y_tmp];
-            
-            % Plot on side view
-            subplot(1,2,2)
-            hold on
-            hS(3) = plot(d.side.leftEye(idx,1),...
-                         d.side.leftEye(idx,2),'r+');
-            hold off
-            htxt(2) = title(['Side: (frame ' num2str(idx) ...
-                   ' of ' num2str(d.num_frames) ')']);
-            set(htxt(2),'Color','k')   
-            
-            % Adjust image limits for next frame
-            y_cntr = y_tmp;
-            y_min  = max([1 y_cntr-ylim_range_s/2]);
-            y_max  = min([size(imS,1) y_cntr+ylim_range_s/2]);
-            x_min  = max([1 x_tmp-xlim_range_s/2]);
-            x_max  = min([size(imS,2) x_tmp+xlim_range_s/2]);
-            
-            d.side.xLim(next_idx,:) = [x_min x_max];
-            d.side.yLim(next_idx,:) = [y_min y_max];
-                         
-            clear y_ctnr y_min y_max x_min x_max
-            
-            % Advance current frame number
-            idx = next_idx;
-            
-        % If right click
-        elseif b_tmp ==3
-            d.side.leftEye(idx,:) = nan(1,2);
-            d.top.leftEye(idx,:)  = nan(1,2);
-            
-            % Delete guideline for side view
-            delete(hT(2))
-            
-        % If 'Return'
-        elseif isempty(b_tmp)
-            clear x_tmp y_tmp b_tmp
-            close
-            break
-            
-        %If esc
-        elseif b_tmp == 27
-            return
-        end
-        
-        clear x_tmp y_tmp b_tmp
-        delete(bd(2))
-        set(htxt(2),'Color','k')
-        
-        % Calculate coordinates in global system
-        %d.x_coord = cal.camT.const .* (d.top.leftEye(idx,1)-cal.camT.pnt(1));
-        %d.y_coord = cal.camT.const .* (d.top.leftEye(idx,2)-cal.camT.pnt(2));
-        %d.z_coord = cal.camS.const .* (d.side.leftEye(idx,2)-cal.camS.pnt(2));
-     end
-   % end
-    
-    % Clear variables for next loop
-    clear imT imS hT hS next_idx last_idx
-    
-    % Save data
-    save([seq_path filesep 'coord_data.mat'],'d')
-    
-    pause(.1)
-    
-    
-end
+% Load images
+im = imread(imPath);
 
-clear xlim_range_s ylim_range_s xlim_range_t ylim_range_t
+% Adjust grayscale values
+im   = (imadjust(im));
 
-    
+%img = adapthisteq(img,'clipLimit',0.02,'Distribution','rayleigh');
 
-function [x,y] = point_select(im,txt)
-
-figure;
+% Subtract background
 warning off
-imshow(im);
+im = imsubtract(imadjust(imMean),im);
 warning on
-title(txt)
 
-set(gcf,'DoubleBuffer','on');
-disp(' '); disp(' ');
-disp('Left mouse button picks point.');disp(' ');
-disp('z - zooms');
-disp('Press return when done.')
+%im(find(im>255))  = 255;
 
-% Loop for interactive input
-but = 1; h = []; x = []; y = [];
-while 1 == 1
-    [xi,yi,but] = ginput(1);
-    
-    % Return pressed (quit out)
-    if isempty(but)
-        if isempty(x)
-            warning('Select point before pressing return')
-        else
-            break
-        end
-        
-    % Right click (add point)
-    elseif but==1            
-        x = xi;
-        y = yi;
-        
-    % Zoom
-    elseif but==122 
-        zoom on
-        pause
-        
-    end
-
-    hold on
-    delete(h)
-    h = plot(x,y,'ro-.'); 
-    hold off
+if ~invert
+    im_T = imcomplement(im_T);
+    im_S = imcomplement(im_S);
 end
-close
+
+function [x_roi,y_roi,h_im] = select_roi
+hold on
+
+% Prompt for first point
+disp(' ');
+disp('Select first point')
+[x1,y1,but1] = ginput(1);
+h1 = plot(x1,y1,'m+');
+
+% Prompt for second
+disp(' ');
+disp('Select second point')
+[x2,y2,but2] = ginput(1);
+
+% Define roi
+delete(h1)
+x_roi = [x1 x2 x2 x1 x1];
+y_roi = [y1 y1 y2 y2 y1];
+
+% Display briefly
+h2 = plot(x_roi,y_roi,'m-');
+pause(.3)
+delete(h2)
+
+% Specify current figure handle
+h_im = gca;
+
+hold off
 
 
-    
+        
 
-
-function im = imread2(im_path)
-% modifeid version of imread
-
-im = imread(im_path); 
-% Adjust contrast
-im = imadjust(im);
 
 function frame_to_global(cal,pts,cam_num)
 % Transforms video frame coordinates into global coordinate
@@ -604,10 +452,8 @@ elseif isfield(cal.cam1,'z') && isfield(cal.cam2,'z')
     com_dim = 3;
 end
 
-
 function global_to_frame(cal,pts,cam_num)
 % Transforms global coordinates into video frame coordinates
-
 
 
 function S = localSystem(P1,P2,P3)
@@ -639,8 +485,6 @@ xAxis   = cross(yAxis,zAxis);
 % Define transformation matrix
 S       = [xAxis' yAxis' zAxis'];
  
-
-
 function [xn,yn,zn] = localToGlobal(x,y,z,origin,S)
 % Transforms coordinates from the local coordinate system to the global
 % system. Coordinates may be given as nxm matricies of equal dimensions.
@@ -670,8 +514,6 @@ for i = 1:size(x,2)
     clear pts 
 end
  
-
-
 function [xn,yn,zn] = globalToLocal(x,y,z,origin,S)
 % Transforms coordinates from the global coordinate system to the local
 % system. Coordinates may be given as nxm matricies of equal dimensions.
@@ -703,7 +545,6 @@ for i = 1:size(x,2)
     
     clear pts
 end
-
 
 
 function add_labels(cam)

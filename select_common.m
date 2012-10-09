@@ -212,6 +212,5 @@ warning on
 %im(find(im>255))  = 255;
 
 if ~invert
-    im_T = imcomplement(im_T);
-    im_S = imcomplement(im_S);
+    im = imcomplement(im);
 end

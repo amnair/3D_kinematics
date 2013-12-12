@@ -1,5 +1,5 @@
 
-function select_eyes(seq_path,d,seq,cal,imMeanT,imMeanS)
+function select_eyes(seq_path,d,t,seq,cal,imMeanT,imMeanS)
 % Function called by acq_3d to select eyes of larvae in 3d
 
 
@@ -24,7 +24,7 @@ disp('Commands ')
 disp('   Left click   - collect coordinate')
 disp('   Right click  - delete coordinate')
 disp(' ')
-disp('   m    - toggle mode (left eye/right eye/swim bladder)')
+disp('   m    - toggle mode (left eye/right eye/swim bladder/dorsal edge/ventral edge)')
 disp('   i    - invert image')
 disp('   s    - subtract background (default)')
 disp('   a    - autotracking')
@@ -110,6 +110,22 @@ while true
     hL(1) = plot(d.S.leftEye(idx,1),d.S.leftEye(idx,2),'g+');
     hR(1) = plot(d.S.rightEye(idx,1),d.S.rightEye(idx,2),'r+');
     hS(1) = plot(d.S.SB(idx,1),d.S.SB(idx,2),'m+');
+    if ~isempty(t.S.dorsalEdge{idx,1}) && ~isempty(t.S.dorsalEdge{idx,2})
+        hD(1) = plot(t.S.dorsalEdge{idx,1},t.S.dorsalEdge{idx,2},'bs-','MarkerFaceColor','b','MarkerSize',3);
+    end
+    if ~isempty(t.S.ventralEdge{idx,1}) && ~isempty(t.S.ventralEdge{idx,2})
+        hD(1) = plot(t.S.ventralEdge{idx,1},t.S.ventralEdge{idx,2},'ys-','MarkerFaceColor','y','MarkerSize',3);
+    end
+    %Plot previous dorsal and ventral edge from previous frame
+    if idx > 1
+        if ~isempty(t.S.dorsalEdge{idx-1,1}) && ~isempty(t.S.dorsalEdge{idx-1,2})
+            hDLprev(1) = plot(t.S.dorsalEdge{idx-1,1},t.S.dorsalEdge{idx-1,2},'Color',[0 0 0.25]);
+            hVprev(1) = plot(t.S.ventralEdge{idx-1,1},t.S.ventralEdge{idx-1,2},'Color',[0.25 0.25 0]);
+        end
+        if ~isempty(t.S.ventralEdge{idx-1,1}) && ~isempty(t.S.ventralEdge{idx-1,2})
+            hVprev(1) = plot(t.S.ventralEdge{idx-1,1},t.S.ventralEdge{idx-1,2},'Color',[0.25 0.25 0]);
+        end
+    end
     hold off
     
     % Title
@@ -119,8 +135,12 @@ while true
         title('Select right eye')
     elseif mode==2
         title('Select swim bladder')
+    elseif mode==3
+        title('Select dorsal edge')
+    elseif mode==4
+        title('Select ventral edge')
     end
-        
+    
     % Display top view
     warning off
     hT_sm = subplot(3,2,2);
@@ -143,6 +163,23 @@ while true
     hL(2) = plot(d.T.leftEye(idx,1),d.T.leftEye(idx,2),'g+');
     hR(2) = plot(d.T.rightEye(idx,1),d.T.rightEye(idx,2),'r+');
     hS(2) = plot(d.T.SB(idx,1),d.T.SB(idx,2),'m+');
+    if ~isempty(t.T.dorsalEdge{idx,1}) && ~isempty(t.T.dorsalEdge{idx,2})
+        hD(2) = plot(t.T.dorsalEdge{idx,1},t.T.dorsalEdge{idx,2},'bs-','MarkerFaceColor','b','MarkerSize',3);
+        
+    end
+    if ~isempty(t.T.ventralEdge{idx,1}) && ~isempty(t.T.ventralEdge{idx,2})
+        hV(2) = plot(t.T.ventralEdge{idx,1},t.T.ventralEdge{idx,2},'ys-','MarkerFaceColor','y','MarkerSize',3);
+        
+    end
+    %Plot previous dorsal and ventral edge from previous frame
+    if idx > 1
+        if~isempty(t.T.dorsalEdge{idx-1,1}) && ~isempty(t.T.dorsalEdge{idx-1,2})
+            hDLprev(2) = plot(t.T.dorsalEdge{idx-1,1},t.T.dorsalEdge{idx-1,2},'Color',[0 0 0.25]);
+        end
+        if~isempty(t.T.ventralEdge{idx-1,1}) && ~isempty(t.T.ventralEdge{idx-1,2})
+            hVprev(2) = plot(t.T.ventralEdge{idx-1,1},t.T.ventralEdge{idx-1,2},'Color',[0.25 0.25 0]);
+        end
+    end
     hold off
     
     % Title
@@ -152,6 +189,10 @@ while true
         title('Select right eye')
     elseif mode==2
         title('Select swim bladder')
+    elseif mode==3
+        title('Select dorsal edge')
+    elseif mode==4
+        title('Select ventral edge')
     end
     
     % Turn warnings back on
@@ -172,8 +213,14 @@ while true
                 d.T.leftEye(idx,:) = [x_tmp y_tmp];
             elseif mode==1
                 d.T.rightEye(idx,:) = [x_tmp y_tmp];
-            else
+            elseif mode==2
                 d.T.SB(idx,:) = [x_tmp y_tmp];
+            elseif mode==3
+                t.T.dorsalEdge{idx,1} = [t.T.dorsalEdge{idx,1} x_tmp];
+                t.T.dorsalEdge{idx,2} = [t.T.dorsalEdge{idx,2} y_tmp];
+            else
+                t.T.ventralEdge{idx,1} = [t.T.ventralEdge{idx,1} x_tmp];
+                t.T.ventralEdge{idx,2} = [t.T.ventralEdge{idx,2} y_tmp];
             end
             
         % Zoomed side view
@@ -183,8 +230,14 @@ while true
                 d.S.leftEye(idx,:) = [x_tmp y_tmp];
             elseif mode==1
                 d.S.rightEye(idx,:) = [x_tmp y_tmp];
-            else
+            elseif mode==2
                 d.S.SB(idx,:) = [x_tmp y_tmp];
+            elseif mode==3
+                t.S.dorsalEdge{idx,1} = [t.S.dorsalEdge{idx,1} x_tmp];
+                t.S.dorsalEdge{idx,2} = [t.S.dorsalEdge{idx,2} y_tmp];
+            else
+                t.S.ventralEdge{idx,1} = [t.S.ventralEdge{idx,1} x_tmp];
+                t.S.ventralEdge{idx,2} = [t.S.ventralEdge{idx,2} y_tmp];
             end
             
         % Unzoomed top view
@@ -239,8 +292,16 @@ while true
             elseif mode==1
                 d.T.rightEye(idx,:) = nan(1,2);
                 
-            else
+            elseif mode==2
                 d.T.SB(idx,:) = nan(1,2);
+                
+            elseif mode==3
+                t.T.dorsalEdge{idx,1} = t.T.dorsalEdge{idx,1}(1:end-1);
+                t.T.dorsalEdge{idx,2} = t.T.dorsalEdge{idx,2}(1:end-1);
+                
+            else
+                t.T.ventralEdge{idx,1} = t.T.ventralEdge{idx,1}(1:end-1);
+                t.T.ventralEdge{idx,2} = t.T.ventralEdge{idx,2}(1:end-1);
                 
             end
                
@@ -251,8 +312,16 @@ while true
             elseif mode==1
                 d.S.rightEye(idx,:) = nan(1,2);
                 
-            else
+            elseif mode==2
                 d.S.SB(idx,:) = nan(1,2);
+                
+            elseif mode==3
+                t.S.dorsalEdge{idx,1} = t.S.dorsalEdge{idx,1}(1:end-1);
+                t.S.dorsalEdge{idx,2} = t.S.dorsalEdge{idx,2}(1:end-1);
+                
+            else
+                t.S.ventralEdge{idx,1} = t.S.ventralEdge{idx,1}(1:end-1);
+                t.S.ventralEdge{idx,2} = t.S.ventralEdge{idx,2}(1:end-1);
                 
             end
             
@@ -385,7 +454,7 @@ while true
     % Change mode ("m")
     elseif b_tmp == 109
         
-        if mode==2
+        if mode==4
             mode = 0;
         else 
             mode = mode+1;
@@ -483,6 +552,7 @@ while true
     
     % Save data
     save([seq_path filesep 'coord_data.mat'],'d')
+    save([seq_path filesep 'tail_data.mat'],'t')
     
     %pause(.05)
 end    

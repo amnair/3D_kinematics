@@ -378,11 +378,30 @@ else
 
 end
 
+if isempty(dir([seq_path filesep 'tail_data.mat']))
+    % Set up structure to hold tail coordinate data 
+    t.S.dorsalEdge = cell(seq.num_frames,2);
+    t.S.ventralEdge = cell(seq.num_frames,2);
+    t.T.dorsalEdge = cell(seq.num_frames,2);
+    t.T.ventralEdge = cell(seq.num_frames,2);
+    
+    % Save tail coordinate data
+    save([seq_path filesep 'tail_data.mat'],'t')
+else
+    disp(' ')
+    disp('Loading tail coordinate data . . .')
+    disp(' ')
+    
+    % Load 'd' structure
+    load([seq_path filesep 'tail_data.mat'])
+    
+end
+
 
 %% Acquire coordinates
 
 
-select_eyes(seq_path,d,seq,cal,imMeanT,imMeanS)
+select_eyes(seq_path,d,t,seq,cal,imMeanT,imMeanS)
 
 
 function im = give_im(imPath,invert,imMean,x_roi,y_roi)

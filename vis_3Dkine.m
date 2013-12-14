@@ -12,6 +12,9 @@ else
     error('You need to specify a root directory')
 end
 
+% Path to save animation files
+ani_path = [root filesep 'new animation'];
+
 % Load kinematic data ('dorsalTailCoord', 'headCoord', 'ventralTailCoord')
 load([root filesep 'kinematicData.mat'])
 
@@ -24,7 +27,21 @@ load([root filesep '6_02_L19_metrics.mat']);
 % Number of points around the periphery of the prey body & tail fin
 numPts_circ = 50;
 
+% Color of surface of prey body
 preyColor = .5.*[1 1 1];
+
+% Execute rendering of prey in global FOR
+render_global = 1;
+
+% Execute rendering of prey in local FOR
+render_local = 1;
+
+% Constant by which to expand the limits of axes
+lim_const = 0.1;
+
+% Magnfier of figure window size
+mag_fig = 2;
+
 
 %% Determine moprhological parameters
 
@@ -56,23 +73,25 @@ for i = 1:length(headCoord{1})
                    (SB(3)-origin(3)).^2);
             
     % Calculate arclength positions of tail margins
-    s_D = Dtail_L(1,1) + ...
-              cumsum(sqrt(diff(Dtail_L(:,1)).^2 + diff(Dtail_L(:,2)).^2));
-    s_V = Dtail_L(1,1) + ...
-              cumsum(sqrt(diff(Dtail_L(:,1)).^2 + diff(Dtail_L(:,2)).^2));
+    s_D = cumsum(sqrt(diff(Dtail_L(:,1)).^2 + diff(Dtail_L(:,2)).^2));
+    s_V = cumsum(sqrt(diff(Dtail_L(:,1)).^2 + diff(Dtail_L(:,2)).^2));
           
-    b_length(i) = max([s_D;s_V]);
+    b_length(i) = min([(Dtail_L(1,1) + max(s_D));(Vtail_L(1,1) + max(s_V))]);
+    tail_length(i) = min([ max(s_D);max(s_V)]);
 end
 
 % Recalculate, considering all values and convert to meters
-b_length = max(b_length);
-s_SB     = mean(s_SB);
+%b_length = max(b_length);
+SB_pos     = mean(s_SB);
 
 % Clear unneeded for next 
-clear Leye Reye s_D s_V Dtail Vtail origin S Dtail_L Vtail_L
+clear Leye Reye s_D s_V Dtail Vtail origin S Dtail_L Vtail_L s_SB
 
 
-%% Render
+%% Calculate polygons
+
+xMax = []; yMax = []; zMax = [];
+xMin = []; yMin = []; zMin = [];
 
 % Step thru time
 for i = 1:length(headCoord{1})
@@ -97,132 +116,192 @@ for i = 1:length(headCoord{1})
     Vtail_L = globalToLocal(Vtail,origin,S);
     
     % Define 3d data for prey in local FOR
-    [pX,pY,pZ] = prey_surf(m,Dtail_L,Vtail_L,numPts_circ,b_length,s_SB);
+    [pX,pY,pZ] = prey_surf(m,Dtail_L,Vtail_L,numPts_circ,b_length(i),SB_pos);
     
     % Returns coordinates for prey body in global FOR
     [pXg,pYg,pZg] = prey_global(pX,pY,pZ,origin,S);
+       
+    % Store results
+    R(i).L.x       = pX;
+    R(i).L.y       = pY;
+    R(i).L.z       = pZ;
+    R(i).G.x       = pXg;
+    R(i).G.y       = pYg;
+    R(i).G.z       = pZg;
+    R(i).S         = S;
+    R(i).origin    = origin;
     
-    
-     
-%     % Render the prey
-%     h1 = patch(real(pXg),real(pYg),real(pZg),real(pZg)*0);
-%     axis equal
-%     % Set properties
-%     set(h1,'FaceLighting','gouraud',...
-%         'LineStyle','none',...
-%         'BackFaceLighting','reverselit',...
-%         'FaceColor',preyColor,...
-%         'AmbientStrength',.5);
-%     %hold on
-    
-    
-    % Visualize kinematic measurements in gobal and local FOR
-    if 0
-        subplot(2,2,1)
-        plot(Dtail(:,1).*1000,Dtail(:,2).*1000,'b',...
-             Vtail(:,1).*1000,Vtail(:,2).*1000,'r',...
-             Leye(1).*1000,Leye(2).*1000,'b+',...
-             Reye(1).*1000,Reye(2).*1000,'r+',...
-             SB(1).*1000,SB(2).*1000,'g+')
-        axis square
-        %xlim([0 4])
-        %ylim([-2 2])
-        xlabel('X')
-        ylabel('Y')
-        title('Global')
-    
-        subplot(2,2,2)
-        plot(Dtail(:,1).*1000,Dtail(:,3).*1000,'b',...
-             Vtail(:,1).*1000,Vtail(:,3).*1000,'r',...
-             Leye(1).*1000,Leye(3).*1000,'b+',...
-             Reye(1).*1000,Reye(3).*1000,'r+',...
-             SB(1).*1000,SB(3).*1000,'g+')
-        axis square
-        %xlim([0 4])
-        %ylim([-2 2])
-        xlabel('X')
-        ylabel('Z')
-        title('Global')
+    % Set limits of global domain
+    xMax    = max([xMax max(pXg(:))]);
+    yMax    = max([yMax max(pYg(:))]);
+    zMax    = max([zMax max(pZg(:))]);
+    xMin    = min([xMin min(pXg(:))]);
+    yMin    = min([yMin min(pYg(:))]);
+    zMin    = min([zMin min(pZg(:))]);
  
-        subplot(2,2,3)
-        plot(Dtail_L(:,1).*1000,Dtail_L(:,2).*1000,'b',...
-             Vtail_L(:,1).*1000,Vtail_L(:,2).*1000,'r')
-        axis square
-        xlim([0 4])
-        ylim([-2 2])
-        xlabel('X')
-        ylabel('Y')
-        title('Local')
+    % Clear values for next iteration
+    clear Leye Reye SB Dtail Vtail origin S Dtail_L Vtail_L
+end
     
-        subplot(2,2,4)
-        plot(Dtail_L(:,1).*1000,Dtail_L(:,3).*1000,'b',...
-             Vtail_L(:,1).*1000,Vtail_L(:,3).*1000,'r')
-        axis square
-        xlim([0 4])
-        ylim([-2 2])
-        xlabel('X')
-        ylabel('Z')
-        title('Local')
-    end
-     
-    
-    if 0
-        
-        
-        
-        % Render the prey -----------------------------------
-        
 
-        
-        % Render the prey at end of stage 2
-        %h2 = patch(real(pXg),real(pYg),real(pZg),real(pZg)*0);
-        h2 = patch(real(pX),real(pY),real(pZ),real(pZ)*0);
+%% Render in global FOR
+
+if render_global
+
+    % Set figure window
+    hF = figure;
+    set(hF,'DoubleBuffer','on');
+    set(hF,'WindowStyle','modal') 
+    
+     % Adjust position
+    f_pos = get(hF,'Position');
+    set(hF,'Position',[f_pos(1) f_pos(2) mag_fig*f_pos(3) mag_fig*f_pos(4)])
+    
+    % Set lights
+    hL(1) = light('position',[0 0 20]);
+    hL(2) = light('position',[0 0 -20]);
+
+    for i = 1:length(R)
+
+        % Render the prey 
+        h = patch(R(i).G.x,R(i).G.y,R(i).G.z,R(i).G.z*0);
         
         % Set properties
-        set(h2,'FaceLighting','gouraud',...
+        set(h,'FaceLighting','gouraud',...
             'LineStyle','none',...
             'BackFaceLighting','reverselit',...
             'FaceColor',preyColor,...
             'AmbientStrength',.5);
         hold on
         
-        h3 = plot3(Dtail_L(:,1),Dtail_L(:,2),Dtail_L(:,3),'b',...
-                   Vtail_L(:,1),Vtail_L(:,2),Vtail_L(:,3),'r');
-        %lighting gouraud
-    %set(gca,'XColor','w','YColor','w','ZColor','w')
-    
-   if i==1
-    hL = light('position',[0 0 20]);
-    hL = light('position',[0 0 -20]);
-    
-    
-   end
-        axis equal
+        % Set axes
+        axis square
+        xlim([xMin*(1-lim_const) xMax*(1+lim_const)])
+        ylim([yMin*(1-lim_const) yMax*(1+lim_const)])
+        zlim([zMin*(1-lim_const) zMax*(1+lim_const)])
+        
+        % Set axes & titles
         xlabel('X');ylabel('Y');zlabel('Z');
+        set(gca,'XColor','w','YColor','w','ZColor','w')
         title(['Frame ' num2str(i)])
-        %view([180 90])
-        % view([150 45])
         view([162 21])
         
-        pause(0.01)
-        delete(h2)
-        delete(h3)
-    end
+        % Capture frame
+        figure(hF)
+        F = getframe(hF);
+        pause(0.01);
+        
+        % Save image
+        fnum = ['00' num2str(i)];
+        imname = ['Global frame ' fnum(end-2:end) '.tif'];      
+        imwrite(F.cdata,colormap,[ani_path filesep imname],'tif'); 
+        
+        % Delete for next iteration
+        delete(h)
+    end 
     
-    
-    % Clear values for next iteration
-    clear Leye Reye SB Dtail Vtail origin S Dtail_L Vtail_L
-    
+    close(hF)
 end
+
+
+%% Render in local FOR
+
+if render_local
+
+    % Set figure window
+    hF = figure;
+    set(hF,'DoubleBuffer','on');
+    set(hF,'WindowStyle','modal')
     
+    % Adjust position
+    f_pos = get(hF,'Position');
+    set(hF,'Position',[f_pos(1) f_pos(2) mag_fig*f_pos(3) mag_fig*f_pos(4)])
+    
+    ax_range = 4.5e-3;
+    
+    % Set lights
+    subplot(2,1,1)
+    hL(1) = light('position',[0 0 20]);
+    hL(2) = light('position',[0 0 -20]);
+    
+    subplot(2,1,2)
+    hL(1) = light('position',[0 0 20]);
+    hL(2) = light('position',[0 0 -20]);
+    
+    for i = 1:length(R)
+
+        % Render the prey 
+        subplot(2,1,1)
+        h(1) = patch(R(i).L.x,R(i).L.y,R(i).L.z,R(i).L.z*0);
+        view([0 90])
+        ha(1) = gca;
+            
+        subplot(2,1,2)
+        h(2) = patch(R(i).L.x,R(i).L.y,R(i).L.z,R(i).L.z*0);
+        view([0 0])
+        ha(2) = gca;
+          
+        for j = 1:2
+            
+            % Set properties
+            set(h(j),'FaceLighting','gouraud',...
+                'LineStyle','none',...
+                'BackFaceLighting','reverselit',...
+                'FaceColor',preyColor,...
+                'AmbientStrength',.5);
+            hold on
+            
+            % Set axes
+            axes(ha(j))
+            axis square
+            xlim([0 ax_range])
+            ylim([-ax_range/2 ax_range/2])
+            zlim([-ax_range/2 ax_range/2])
+            
+            % Set axes & titles
+            xlabel('X');ylabel('Y');zlabel('Z');
+            set(gca,'XColor','w','YColor','w','ZColor','w')
+            
+        end
+        
+        axes(ha(1))
+        title(['Frame ' num2str(i)])
+        
+        % Capture frame
+        figure(hF)
+        F = getframe(hF);
+        pause(0.01);
+        
+        % Save image
+        fnum = ['00' num2str(i)];
+        imname = ['Local frame ' fnum(end-2:end) '.tif'];      
+        imwrite(F.cdata,colormap,[ani_path filesep imname],'tif'); 
+        
+        % Delete for next iteration
+        delete(h)
+    end 
+    
+    close(hF)
+end
+
+
+
+
+return
+     
+    
+   
     
 
 function [X,Y,Z]= prey_surf(m,tailD,tailV,numPts,b_length,s_SB)
 % Provides 3D coordinates of the surface of the prey body
 
-eye_pos = 0.35e-3;
+eye_pos = 0.32e-3;
 
 preyColor = .5.*[1 1 1];
+
+
+s_SB = s_SB + eye_pos;
 
 % Define radial positions along vector
 theta = linspace(0,2*pi,numPts)';
@@ -230,20 +309,20 @@ theta = linspace(0,2*pi,numPts)';
 % Define empty vectors for coordinates
 x=[];y=[];z=[];
 
-% Scaling constant for morph data to fit kinematics 
-const = b_length./(max(m.s)-eye_pos);
-
 % Extract and scale morph data
-h = m.h .* const;
-w = m.w .* const;
-s = m.s .* const - eye_pos;
-c = -m.c .* const;
+h = m.h;
+w = m.w;
+s = m.s;
+c = -m.c;
 
 % Clear for next
-clear m const
+clear m 
 
 % Index of tail start
 iTailStart = find(s >= s_SB,1,'first');
+
+% Offset all centers wrt point of tail start 
+c = c - c(iTailStart);
 
 % Matching arclength positions of dorsal & ventral tail coord _____________
 
@@ -251,39 +330,58 @@ iTailStart = find(s >= s_SB,1,'first');
 % start of the fin
 numFin = sum(s > s(iTailStart));
 
-% Indices for marching anteriorly along tail
-idxD = size(tailD,1):-1:1;
-idxV = size(tailD,1):-1:1;
+% X-position of kinematic data to start considering for interpolaton
+%v_post = tailV(1,1) > tailD(1,1);
+xStart = max([tailD(1,1) tailV(1,1)]);
+i_tailD = find(tailD(:,1)>=xStart,1,'first'):length(tailD(:,1));
+i_tailV = find(tailV(:,1)>=xStart,1,'first'):length(tailV(:,1));
 
-% Measured arclengths from posterior margin
-sBackD = [0; cumsum(sqrt(diff(tailD(idxD,1)).^2 + ...
-                         diff(tailD(idxD,2)).^2 + ...
-                         diff(tailD(idxD,3)).^2))];
-sBackV = [0; cumsum(sqrt(diff(tailV(idxV,1)).^2 + ...
-                         diff(tailV(idxV,2)).^2 + ...
-                         diff(tailV(idxV,3)).^2))];  
+% Calculate arclength positions of tail margins
+s_D = cumsum(sqrt(diff(tailD(i_tailD,1)).^2 + diff(tailD(i_tailD,2)).^2));
+s_V = cumsum(sqrt(diff(tailV(i_tailV,1)).^2 + diff(tailV(i_tailV,2)).^2));
+
+% Scaling constant 
+const = (max(s)-s(iTailStart))./min([s_D(end) s_V(end)]);
+
+% Scale and position the front end of the kinematic data
+tailV(:,1) = const.* (tailV(:,1) - xStart) + s(iTailStart);
+tailV(:,2) = const .* (tailV(:,2) - tailV(1,2));
+tailV(:,3) = const .* tailV(:,3);
+
+tailD(:,1) = const.* (tailD(:,1) - xStart) + s(iTailStart);
+tailD(:,2) = const .* (tailD(:,2) - tailD(1,2));
+tailD(:,3) = const .* tailD(:,3);
+
+% Measured arclength positions of the two margins
+sBackD = [0; cumsum(sqrt(diff(tailD(i_tailD,1)).^2 + ...
+                         diff(tailD(i_tailD,2)).^2 + ...
+                         diff(tailD(i_tailD,3)).^2))];
+sBackV = [0; cumsum(sqrt(diff(tailV(i_tailV,1)).^2 + ...
+                         diff(tailV(i_tailV,2)).^2 + ...
+                         diff(tailV(i_tailV,3)).^2))];  
 
 % Arclength positions to interpolate tail
 s_tail = linspace(0, min([max(sBackD) max(sBackV)]),numFin);
 
 % Run interpolation
-iTailV(:,1) = interp1(sBackV,tailV(idxV,1),s_tail);
-iTailV(:,2) = interp1(sBackV,tailV(idxV,2),s_tail);
-iTailV(:,3) = interp1(sBackV,tailV(idxV,3),s_tail);
+iTailV(:,1) = interp1(sBackV,tailV(i_tailV,1),s_tail);
+iTailV(:,2) = interp1(sBackV,tailV(i_tailV,2),s_tail);
+iTailV(:,3) = interp1(sBackV,tailV(i_tailV,3),s_tail);
 
-iTailD(:,1) = interp1(sBackV,tailD(idxD,1),s_tail);
-iTailD(:,2) = interp1(sBackV,tailD(idxD,2),s_tail);
-iTailD(:,3) = interp1(sBackV,tailD(idxD,3),s_tail);
+iTailD(:,1) = interp1(sBackD,tailD(i_tailD,1),s_tail);
+iTailD(:,2) = interp1(sBackD,tailD(i_tailD,2),s_tail);
+iTailD(:,3) = interp1(sBackD,tailD(i_tailD,3),s_tail);
 
-clear tailV tailD numFin
+clear tailV tailD numFin minZ
 
-% Flip back ordering of coordinates
-tailV(:,1) = iTailV([end:-1:1],1); 
-tailV(:,2) = iTailV([end:-1:1],2); 
-tailV(:,3) = iTailV([end:-1:1],3); 
-tailD(:,1) = iTailD([end:-1:1],1); 
-tailD(:,2) = iTailD([end:-1:1],2); 
-tailD(:,3) = iTailD([end:-1:1],3); 
+% Overwrite old tail margin coordinates
+tailV  = iTailV; 
+tailD  = iTailD; 
+
+% Adjust z-positions
+midZ = mean([tailV(1,3) tailD(1,3)]);
+tailV(:,3) = tailV(:,3) - midZ;
+tailD(:,3) = tailD(:,3) - midZ;
 
 % Define tail midline
 tail(:,1) = mean([tailV(:,1) tailD(:,1)],2);
@@ -293,32 +391,14 @@ tail(:,3) = mean([tailV(:,3) tailD(:,3)],2);
 % Clear for next
 clear iTailD iTailV sBackD sBackV idxD idxV
 
-% Match up kinematic and morphological data  ______________________________
-
-% Offset all centers wrt point of tail start 
-c = c - c(iTailStart);
-
-% Center translate tail points to the center of the anterior point
-tailStart  = tail(1,:);
-tailV(:,3) = tailV(:,3) - tailStart(3); 
-tailD(:,3) = tailD(:,3) - tailStart(3); 
-tail(:,3)  = tail(:,3) - tailStart(3);
-
-% Force anterior element to align in y coordinates
-tailV(:,2) = tailV(:,2) - tailV(1,2);
-tailD(:,2) = tailD(:,2) - tailD(1,2);
-tail(:,2) = tail(:,2) - tail(1,2);
-
-clear tailStart
-
 % Visualize raw data
-if 1
-    %figure
-    subplot(1,2,1)
-    plot(s,w/2,'k',s,-w/2,'k',tailD(:,1),tailD(:,2),'r',...
-         tailV(:,1),tailV(:,2),'b',tail(:,1),tail(:,2),'g--')
-    axis equal
-    xlabel('X');ylabel('Y')
+if 0
+%     %figure
+     subplot(1,2,1)
+     plot(s,w/2,'k',s,-w/2,'k',tailD(:,1),tailD(:,2),'r',...
+          tailV(:,1),tailV(:,2),'b',tail(:,1),tail(:,2),'g--')
+     axis equal
+     xlabel('X');ylabel('Y')
     grid on
     
     subplot(1,2,2)
@@ -423,16 +503,7 @@ for i=1:length(s)-1
     end
 end 
 
-
-
-%lighting gouraud
-    %set(gca,'XColor','w','YColor','w','ZColor','w')
-    
-   
-    %hL = light('position',[0 0 20]);
-    %hL = light('position',[0 0 -20]);
-
-% This attempts to link the trunk to tail coordinates    
+% This links the trunk to tail coordinates    
 E_last = [xTemp2 yTemp2 zTemp2];
 
 % Make cellular tail coordinates __________________________________
@@ -487,10 +558,7 @@ for i = (i_last+1):length(s)-1
     
     j = j + 1;
     
-
-end 
-
-if 0
+    if 0
     hand = patch(x,y,z,z.*0);
     title(['i =' num2str(i)])
     % Set properties
@@ -504,7 +572,10 @@ if 0
     tttt=2;
     %pause
     
-end
+    end
+end 
+
+
 
 clear E_last i j
 
